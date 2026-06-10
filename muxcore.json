@@ -1,0 +1,9 @@
+{
+  "name": "Publish Policy Default",
+  "description": "Default event publication access control. Provides capability-based policy for the event bus.",
+  "version": "0.1.0",
+  "author": "MuxCore",
+  "roles": ["security"],
+  "capabilities": ["publish.policy"],
+  "contracts": []
+}
