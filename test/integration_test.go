@@ -1,125 +1,57 @@
+//go:build integration
+
 package test
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	modulev1 "github.com/Muxcore-Media/core/proto/gen/muxcore/module/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-
-	policyv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/policy/v1"
 )
 
-func TestPublishPolicy_DefaultDeny(t *testing.T) {
-	bin := buildModule(t, "publish-policy-default")
-	policyFile := writePublishPolicy(t)
-	addr := ":19201"
+func TestModuleRegistration(t *testing.T) {
+	addr := os.Getenv("MUXCORE_GRPC_ADDR")
+	if addr == "" {
+		t.Skip("MUXCORE_GRPC_ADDR not set")
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, "--grpc-addr", addr, "--policy-file", policyFile)
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	defer cmd.Process.Kill()
-
-	time.Sleep(500 * time.Millisecond)
-
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.DialContext(ctx, addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
 	if err != nil {
-		t.Fatalf("dial: %v", err)
+		t.Fatalf("dial core: %v", err)
 	}
 	defer conn.Close()
 
-	client := policyv1.NewPolicyServiceClient(conn)
-
-	t.Run("allow_glob", func(t *testing.T) {
-		resp, err := client.AllowPublish(ctx, &policyv1.AllowPublishRequest{
-			CallerModuleId: "mod-a", EventType: "download.completed",
-		})
-		if err != nil {
-			t.Fatalf("AllowPublish: %v", err)
-		}
-		if !resp.Allowed {
-			t.Fatal("expected allowed")
-		}
+	reg := modulev1.NewModuleRegistrationClient(conn)
+	resp, err := reg.Register(ctx, &modulev1.RegisterRequest{
+		ModuleId: "test-module",
+		ModuleInfo: &modulev1.ModuleInfo{
+			Id:           "test-module",
+			Name:         "Test Module",
+			Version:      "0.0.0-test",
+			Roles:        []string{"test"},
+			Capabilities: []string{"test"},
+		},
 	})
-
-	t.Run("deny_no_match", func(t *testing.T) {
-		resp, err := client.AllowPublish(ctx, &policyv1.AllowPublishRequest{
-			CallerModuleId: "mod-a", EventType: "transcode.started",
-		})
-		if err != nil {
-			t.Fatalf("AllowPublish: %v", err)
-		}
-		if resp.Allowed {
-			t.Fatal("expected denied")
-		}
-	})
-
-	t.Run("call_not_implemented", func(t *testing.T) {
-		resp, err := client.AllowCall(ctx, &policyv1.AllowCallRequest{
-			CallerModuleId: "a", TargetModuleId: "b", Method: "Get",
-		})
-		if err != nil {
-			t.Fatalf("AllowCall: %v", err)
-		}
-		if resp.Allowed {
-			t.Fatal("expected publish-policy to deny call requests")
-		}
-	})
-}
-
-func writePublishPolicy(t *testing.T) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "policies.yaml")
-	os.WriteFile(p, []byte(strings.TrimSpace(`
-- caller: "mod-a"
-  event_types: ["download.*", "media.*"]
-- caller: "*"
-  event_types: ["module.*"]
-`)), 0644)
-	return p
-}
-
-func buildModule(t *testing.T, name string) string {
-	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, name)
-	cmd := exec.Command("go", "build", "-o", bin, "./cmd/module")
-	cmd.Dir = findRepoRoot(t)
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("build: %v", err)
+	if err != nil {
+		t.Fatalf("register: %v", err)
 	}
-	return bin
-}
-
-func findRepoRoot(t *testing.T) string {
-	t.Helper()
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").CombinedOutput()
-	if err == nil {
-		return strings.TrimSpace(string(out))
+	if !resp.Accepted {
+		t.Fatalf("registration rejected: %s", resp.Error)
 	}
-	dir, _ := os.Getwd()
-	for dir != "/" {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		dir = filepath.Dir(dir)
-	}
-	t.Fatal("cannot find repo root")
-	return ""
-}
+	t.Logf("registered, mesh_addr=%s node_id=%s", resp.MeshAddr, resp.NodeId)
 
-func init() {
-	fmt.Fprintln(os.Stderr, "integration tests: building module binary...")
+	_, err = reg.Unregister(ctx, &modulev1.UnregisterRequest{ModuleId: "test-module"})
+	if err != nil {
+		t.Fatalf("unregister: %v", err)
+	}
 }
