@@ -64,7 +64,11 @@ func (m *Module) Info() contracts.ModuleInfo {
 		Description:  "Default event publication access control with glob-pattern allow-list",
 		Author:       "MuxCore",
 		Capabilities: []string{contracts.CapabilityPublishPolicy},
-		HTTPAddr:     m.grpcAddr,
+		Contracts: []contracts.ContractDeclaration{
+			{Repo: "github.com/Muxcore-Media/core/pkg/contracts", Interface: "PublishPolicyProvider", Version: "v0.4.0"},
+		},
+		MinCoreVersion: "0.4.0",
+		HTTPAddr:       m.grpcAddr,
 	}
 }
 

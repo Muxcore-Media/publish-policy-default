@@ -11,16 +11,16 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 	policyv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/policy/v1"
+	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 )
 
 // PolicyServer implements the PolicyService gRPC server for publish policy enforcement.
 type PolicyServer struct {
 	policyv1.UnimplementedPolicyServiceServer
-	policy      *policy.Policy
-	allowed     atomic.Int64
-	denied      atomic.Int64
+	policy  *policy.Policy
+	allowed atomic.Int64
+	denied  atomic.Int64
 }
 
 // New creates a PolicyServer backed by the given policy.

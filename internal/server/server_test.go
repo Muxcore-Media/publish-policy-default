@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 	policyv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/policy/v1"
+	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 )
 
 func newTestServer(t *testing.T, yamlData string) *PolicyServer {

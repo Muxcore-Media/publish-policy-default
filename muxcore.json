@@ -1,9 +1,12 @@
 {
   "name": "Publish Policy Default",
-  "description": "Default event publication access control. Provides capability-based policy for the event bus.",
+  "description": "Default event publication access control with glob-pattern allow-list.",
   "version": "0.1.0",
   "author": "MuxCore",
   "roles": ["security"],
   "capabilities": ["publish.policy"],
-  "contracts": []
+  "contracts": [
+    {"repo": "github.com/Muxcore-Media/core/pkg/contracts", "interface": "PublishPolicyProvider", "version": "v0.4.0"}
+  ],
+  "minCoreVersion": "0.4.0"
 }
