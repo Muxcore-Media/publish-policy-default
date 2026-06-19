@@ -17,6 +17,14 @@
 - caller: "media-tv"
   event_types: ["media.*"]
 
+# Scanner can publish file import events
+- caller: "media-scanner"
+  event_types: ["media.*"]
+
+# Indexer can publish indexer lifecycle events
+- caller: "indexer-prowlarr"
+  event_types: ["indexer.*", "module.*"]
+
 # Notification module can send alerts
 - caller: "notifier-discord"
   event_types: ["notification.*", "alert.*"]
