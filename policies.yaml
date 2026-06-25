@@ -14,7 +14,7 @@
 # Media managers can publish their lifecycle events
 - caller: "media-movies"
   event_types: ["media.*"]
-- caller: "media-tv"
+- caller: "media-tvshows"
   event_types: ["media.*"]
 
 # Scanner can publish file import events
@@ -24,6 +24,10 @@
 # Indexer can publish indexer lifecycle events
 - caller: "indexer-prowlarr"
   event_types: ["indexer.*", "module.*"]
+
+# Request media can publish request lifecycle events
+- caller: "request-media"
+  event_types: ["media.*"]
 
 # Notification module can send alerts
 - caller: "notifier-discord"
