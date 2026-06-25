@@ -75,20 +75,22 @@ func (m *Module) Info() contracts.ModuleInfo {
 func (m *Module) Init(ctx context.Context) error {
 	var err error
 	if m.allowAll {
-		m.policy, err = policy.Parse([]byte("\n- caller: \"*\"\n  events: [\"*\"]\n"))
+		m.policy, err = policy.Parse([]byte("\n- caller: \"*\"\n  event_types: [\"*\"]\n"))
 	} else {
-		// If the policy file doesn't exist, write a default allow-all policy.
-		if _, statErr := os.Stat(m.filePath); os.IsNotExist(statErr) {
+		// Try to load the policy file. If it doesn't exist or isn't valid,
+		// write a default allow-all policy.
+		m.policy, err = policy.Load(m.filePath)
+		if err != nil {
 			defaultPolicy := []byte("# Default allow-all publish policy — all event publishes permitted\n# WARNING: Replace this with a restricted policy for production use.\n- caller: \"*\"\n  event_types: [\"*\"]\n")
 			if writeErr := os.WriteFile(m.filePath, defaultPolicy, 0644); writeErr != nil {
-				return fmt.Errorf("create default policy file %s: %w", m.filePath, writeErr)
+				return fmt.Errorf("load policy and create default: load err: %w, write err: %w", err, writeErr)
 			}
-			slog.Warn("no policy file found, created allow-all default",
+			slog.Warn("no valid policy file found, created allow-all default",
 				"file", m.filePath,
 				"warning", "ALL event publishes are ALLOWED — this is NOT secure for production",
 			)
+			m.policy, err = policy.Load(m.filePath)
 		}
-		m.policy, err = policy.Load(m.filePath)
 	}
 	if err != nil {
 		return fmt.Errorf("load policy: %w", err)
