@@ -79,7 +79,7 @@ func (m *Module) Init(ctx context.Context) error {
 	} else {
 		// If the policy file doesn't exist, write a default allow-all policy.
 		if _, statErr := os.Stat(m.filePath); os.IsNotExist(statErr) {
-			defaultPolicy := []byte("# Default allow-all publish policy — all event publishes permitted\n# WARNING: Replace this with a restricted policy for production use.\n- caller: \"*\"\n  events: [\"*\"]\n")
+			defaultPolicy := []byte("# Default allow-all publish policy — all event publishes permitted\n# WARNING: Replace this with a restricted policy for production use.\n- caller: \"*\"\n  event_types: [\"*\"]\n")
 			if writeErr := os.WriteFile(m.filePath, defaultPolicy, 0644); writeErr != nil {
 				return fmt.Errorf("create default policy file %s: %w", m.filePath, writeErr)
 			}
