@@ -1,8 +1,8 @@
 # publish-policy-default — Remaining Work
 
 ### Operational
-- [ ] Audit logging of denied publishes
-- [ ] Health endpoint (gRPC health check)
+- [x] Audit logging of denied publishes — core fire-and-forget at bus enforcement (`event.publish.denied`); module keeps counters/`slog`
+- [x] Health endpoint (gRPC health check)
 
 ### Advanced
 - [ ] Dynamic capability-based matching (auto-detect event types from registry)
