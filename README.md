@@ -8,10 +8,9 @@ bus refuses all `bus.Publish()` calls until a module implementing
 
 ## How It Works
 
-The module matches event types against the publisher's declared capabilities.
-A module that declares capability `"downloader.torrent"` is allowed to publish
-events matching the pattern `"download.*"`. This capability-to-event-type
-mapping is the default policy.
+The module loads a static YAML policy (`policies.yaml`) that declares which
+callers may publish which event types. The event bus consults this module
+before delivering every publish.
 
 ```
 Downloader publishes "download.completed"
@@ -33,29 +32,47 @@ publish-policy-default.CanPublish("downloader-qbittorrent", "download.completed"
 
 ## Configuration
 
-### CLI Flags
+### Policy File (`policies.yaml`)
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--allow-all` | `false` | Permit all event publication (development) |
-| `--deny-all` | `false` | Deny all event publication (locked down) |
+Rules are evaluated in order; the first match wins. If no rule matches, the
+publish is denied. `caller: "*"` matches any module. Event types support
+glob matching (`"download.*"`, `"media.*"`, `"*"`).
 
-### Default Capability Mapping
+```yaml
+# Allow a module to publish download-related events
+- caller: "downloader-qbittorrent"
+  event_types: ["download.*"]
 
-Without a mapping file, the module allows publishes when the event type
-matches the caller's declared capability as a prefix:
+# Allow any module to publish lifecycle events
+- caller: "*"
+  event_types: ["module.*", "cluster.*"]
 
+# Development mode: allow all (uncomment only for local use)
+# - caller: "*"
+#   event_types: ["*"]
 ```
-Capability "downloader.torrent" → allows "download.*" events
-Capability "downloader.*"       → allows "download.*" events
-Capability "media_manager"      → allows "media.*" events
-Capability "*"                  → allows all events
-```
+
+If the policy file is missing or invalid at startup, Init fails. Ship and
+maintain an explicit `policies.yaml` (the repo includes a starter file).
+
+### Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PUBLISH_POLICY_FILE` | `policies.yaml` | Path to policy YAML file |
+| `MUXCORE_INSECURE_DISABLE_TLS` | unset | Set to `true` for insecure mesh registration (dev) |
+
+Mesh registration also uses the module SDK (`MUXCORE_GRPC_ADDR`,
+`MUXCORE_MODULE_ID`, `--muxcore-mesh-addr`, `--muxcore-module-id`).
+
+### Hot-Reload
+
+SIGHUP reloads the policy file without restarting the module.
 
 ## Implementation
 
 - Registers with capability: `"publish.policy"`
-- Implements `contracts.PublishPolicyProvider`
-- Also implements `contracts.ResourcePublishPolicyProvider` for payload-level checks
-- Audits denied publishes
+- Implements `contracts.PublishPolicyProvider` (gRPC `PolicyService.AllowPublish`)
+- Denied publishes are audited by **core** at bus enforcement (not via module `AuditLogger`); module keeps counters/`slog`
+- Registers `grpc_health_v1` (SERVING) on the module gRPC server
 - Exposes metrics: `publish_policy_allowed_total`, `publish_policy_denied_total`
