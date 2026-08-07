@@ -6,6 +6,8 @@
 # Downloader can publish download-related events
 - caller: "downloader-qbittorrent"
   event_types: ["download.*"]
+- caller: "downloader-native-torrent"
+  event_types: ["download.*"]
 
 # Transcoder can publish transcode-related events
 - caller: "transcoder-ffmpeg"
@@ -16,6 +18,10 @@
   event_types: ["media.*"]
 - caller: "media-tvshows"
   event_types: ["media.*"]
+
+# Automation dispatches / wanted lifecycle
+- caller: "media-automation"
+  event_types: ["download.*", "media.*"]
 
 # Scanner can publish file import events
 - caller: "media-scanner"
