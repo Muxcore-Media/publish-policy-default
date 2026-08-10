@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2] — 2026-08-10
+
+### Added
+
+- Advertise `settings` capability so admin-ui discovers SettingsProvider without ListAll probing.
+
 ## [0.2.0] — 2026-08-09
 
 ### Added

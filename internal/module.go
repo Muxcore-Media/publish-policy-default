@@ -64,11 +64,11 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Publish Policy Default",
-		Version:      "0.2.1",
+		Version:      "0.2.2",
 		Roles:        []string{"security"},
 		Description:  "Event publish policy with globs, payload checks, rate limits, and audit export",
 		Author:       "MuxCore",
-		Capabilities: []string{contracts.CapabilityPublishPolicy},
+		Capabilities: []string{contracts.CapabilityPublishPolicy, "settings"},
 		Contracts: []contracts.ContractDeclaration{
 			{Repo: "github.com/Muxcore-Media/core/pkg/contracts", Interface: "PublishPolicyProvider", Version: "v0.4.0"},
 		},
