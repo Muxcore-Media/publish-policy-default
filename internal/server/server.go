@@ -64,7 +64,7 @@ func (s *PolicyServer) AllowPublish(ctx context.Context, req *policyv1.AllowPubl
 		return nil, status.Error(codes.InvalidArgument, "caller_module_id and event_type are required")
 	}
 
-	allowed, reason := s.policy.Allow(caller, eventType)
+	allowed, reason := s.policy.AllowWithPayload(caller, eventType, req.GetEventPayload())
 	if !allowed {
 		s.denied.Add(1)
 		slog.Warn("publish policy: denied",
