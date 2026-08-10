@@ -8,24 +8,28 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/Muxcore-Media/core/pkg/contracts"
+	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
 	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 	"github.com/Muxcore-Media/publish-policy-default/internal/server"
 )
 
 type Module struct {
-	policy   *policy.Policy
-	srv      *server.PolicyServer
-	grpcSrv  *grpc.Server
-	lis      net.Listener
-	filePath string
-	id       string
-	grpcAddr string
+	policy    *policy.Policy
+	srv       *server.PolicyServer
+	grpcSrv   *grpc.Server
+	lis       net.Listener
+	cfgMu     sync.RWMutex
+	filePath  string
+	auditPath string
+	id        string
+	grpcAddr  string
 }
 
 type Config struct {
@@ -47,10 +51,12 @@ func NewModule(cfg Config) *Module {
 	if v := os.Getenv("PUBLISH_POLICY_FILE"); v != "" {
 		cfg.FilePath = v
 	}
+	auditPath := strings.TrimSpace(os.Getenv("PUBLISH_POLICY_AUDIT_PATH"))
 	return &Module{
-		id:       cfg.ID,
-		grpcAddr: cfg.GRPCAddr,
-		filePath: cfg.FilePath,
+		id:        cfg.ID,
+		grpcAddr:  cfg.GRPCAddr,
+		filePath:  cfg.FilePath,
+		auditPath: auditPath,
 	}
 }
 
@@ -58,7 +64,7 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Publish Policy Default",
-		Version:      "0.2.0",
+		Version:      "0.2.1",
 		Roles:        []string{"security"},
 		Description:  "Event publish policy with globs, payload checks, rate limits, and audit export",
 		Author:       "MuxCore",
@@ -77,9 +83,9 @@ func (m *Module) Init(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load policy %q: %w", m.filePath, err)
 	}
-	if audit := strings.TrimSpace(os.Getenv("PUBLISH_POLICY_AUDIT_PATH")); audit != "" {
-		m.policy.SetAuditPath(audit)
-		slog.Info("publish-policy audit export enabled", "path", audit)
+	if m.auditPath != "" {
+		m.policy.SetAuditPath(m.auditPath)
+		slog.Info("publish-policy audit export enabled", "path", m.auditPath)
 	}
 	m.srv = server.New(m.policy)
 	m.lis, err = net.Listen("tcp", m.grpcAddr)
@@ -94,6 +100,7 @@ func (m *Module) Start(ctx context.Context) error {
 	m.grpcSrv = grpc.NewServer()
 	m.srv.RegisterWithGRPC(m.grpcSrv)
 	grpc_health_v1.RegisterHealthServer(m.grpcSrv, &healthServer{})
+	modulesdk.RegisterSettings(m.grpcSrv, m.id, m)
 
 	go func() {
 		slog.Info("publish-policy gRPC started", "addr", m.grpcAddr)
@@ -107,13 +114,9 @@ func (m *Module) Start(ctx context.Context) error {
 	go func() {
 		for range sighupCh {
 			slog.Info("SIGHUP: reloading policy")
-			newP, err := policy.Load(m.filePath)
-			if err != nil {
+			if err := m.ReloadPolicy(); err != nil {
 				slog.Error("policy reload failed", "error", err)
-				continue
 			}
-			m.policy.ReplaceRules(newP)
-			slog.Info("policy reloaded")
 		}
 	}()
 	return nil
