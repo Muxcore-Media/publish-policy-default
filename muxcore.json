@@ -1,12 +1,21 @@
 {
   "name": "Publish Policy Default",
   "description": "Default event publication access control with glob-pattern allow-list.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": "MuxCore",
-  "roles": ["security"],
-  "capabilities": ["publish.policy"],
+  "roles": [
+    "security"
+  ],
+  "capabilities": [
+    "publish.policy",
+    "settings"
+  ],
   "contracts": [
-    {"repo": "github.com/Muxcore-Media/core/pkg/contracts", "interface": "PublishPolicyProvider", "version": "v0.4.0"}
+    {
+      "repo": "github.com/Muxcore-Media/core/pkg/contracts",
+      "interface": "PublishPolicyProvider",
+      "version": "v0.4.0"
+    }
   ],
   "minCoreVersion": "0.4.0"
 }
