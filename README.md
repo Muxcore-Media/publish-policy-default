@@ -65,6 +65,24 @@ maintain an explicit `policies.yaml` (the repo includes a starter file).
 Mesh registration also uses the module SDK (`MUXCORE_GRPC_ADDR`,
 `MUXCORE_MODULE_ID`, `--muxcore-mesh-addr`, `--muxcore-module-id`).
 
+
+### Advanced rules (v0.2+)
+
+```yaml
+groups:
+  downloaders:
+    - downloader-qbittorrent
+rules:
+  - caller_group: downloaders
+    event_types: ["download.*"]
+    rate_limit_per_min: 120
+    payload_max_bytes: 65536
+    payload_require_keys: ["id"]
+    required_capability: "download"   # event type capability.download* or payload.capability
+```
+
+Set `PUBLISH_POLICY_AUDIT_PATH` to append JSONL allow/deny records.
+
 ### Hot-Reload
 
 SIGHUP reloads the policy file without restarting the module.
