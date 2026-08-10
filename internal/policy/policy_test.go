@@ -3,7 +3,9 @@ package policy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParse_EmptyRules(t *testing.T) {
@@ -253,5 +255,91 @@ func TestMatchEventType_Glob(t *testing.T) {
 		if got != tt.match {
 			t.Errorf("matchEventType(%q, %q) = %v, want %v", tt.pattern, tt.eventType, got, tt.match)
 		}
+	}
+}
+
+func TestAllow_RateLimit(t *testing.T) {
+	p, err := Parse([]byte(`
+- caller: "a"
+  event_types: ["e.x"]
+  rate_limit_per_min: 1
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	p.now = func() time.Time { return fixed }
+	if ok, _ := p.Allow("a", "e.x"); !ok {
+		t.Fatal("first allow")
+	}
+	if ok, _ := p.Allow("a", "e.x"); ok {
+		t.Fatal("second should deny")
+	}
+}
+
+func TestAllow_PayloadKeysAndMax(t *testing.T) {
+	p, err := Parse([]byte(`
+- caller: "a"
+  event_types: ["e.x"]
+  payload_max_bytes: 64
+  payload_require_keys: ["id"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := p.AllowWithPayload("a", "e.x", []byte(`{"id":"1"}`)); !ok {
+		t.Fatal("expected allow")
+	}
+	if ok, _ := p.AllowWithPayload("a", "e.x", []byte(`{}`)); ok {
+		t.Fatal("missing key should deny")
+	}
+	big := make([]byte, 100)
+	for i := range big {
+		big[i] = 'x'
+	}
+	if ok, _ := p.AllowWithPayload("a", "e.x", big); ok {
+		t.Fatal("oversized should deny")
+	}
+}
+
+func TestAllow_RequiredCapability(t *testing.T) {
+	p, err := Parse([]byte(`
+- caller: "a"
+  event_types: ["*"]
+  required_capability: "download"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := p.Allow("a", "capability.download"); !ok {
+		t.Fatal("event type capability match")
+	}
+	if ok, _ := p.AllowWithPayload("a", "job.done", []byte(`{"capability":"download"}`)); !ok {
+		t.Fatal("payload capability match")
+	}
+	if ok, _ := p.Allow("a", "other.event"); ok {
+		t.Fatal("should deny without capability")
+	}
+}
+
+func TestAuditExport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.jsonl")
+	p, err := Parse([]byte(`
+- caller: "a"
+  event_types: ["ok.*"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.SetAuditPath(path)
+	p.Allow("a", "ok.one")
+	p.Allow("b", "ok.one")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"allowed":true`) || !strings.Contains(string(data), `"allowed":false`) {
+		t.Fatalf("unexpected audit content: %s", data)
 	}
 }

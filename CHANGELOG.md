@@ -1,7 +1,24 @@
 # Changelog
 
-## [0.1.0] — Unreleased
+## [0.2.0] — 2026-08-09
 
 ### Added
 
-- Initial scaffold: README, ROADMAP, project structure.
+- Payload checks: `payload_max_bytes`, `payload_require_keys`
+- Dynamic capability matching via `required_capability`
+- Event rate limiting: `rate_limit_per_min`
+- Caller groups (`groups` + `caller_group`)
+- JSONL audit export via `PUBLISH_POLICY_AUDIT_PATH`
+- Document form `{ groups, rules }` alongside legacy rule lists
+
+## [0.1.1]
+
+### Changed
+
+- Core pin / CI updates
+
+## [0.1.0]
+
+### Added
+
+- Static YAML publish policy with SIGHUP reload

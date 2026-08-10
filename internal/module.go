@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"google.golang.org/grpc"
@@ -57,9 +58,9 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Publish Policy Default",
-		Version:      "0.1.0",
+		Version:      "0.2.0",
 		Roles:        []string{"security"},
-		Description:  "Default event publication access control with glob-pattern allow-list",
+		Description:  "Event publish policy with globs, payload checks, rate limits, and audit export",
 		Author:       "MuxCore",
 		Capabilities: []string{contracts.CapabilityPublishPolicy},
 		Contracts: []contracts.ContractDeclaration{
@@ -75,6 +76,10 @@ func (m *Module) Init(ctx context.Context) error {
 	m.policy, err = policy.Load(m.filePath)
 	if err != nil {
 		return fmt.Errorf("load policy %q: %w", m.filePath, err)
+	}
+	if audit := strings.TrimSpace(os.Getenv("PUBLISH_POLICY_AUDIT_PATH")); audit != "" {
+		m.policy.SetAuditPath(audit)
+		slog.Info("publish-policy audit export enabled", "path", audit)
 	}
 	m.srv = server.New(m.policy)
 	m.lis, err = net.Listen("tcp", m.grpcAddr)
