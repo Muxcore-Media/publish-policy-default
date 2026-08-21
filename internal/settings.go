@@ -20,6 +20,10 @@ func (m *Module) UpdateSetting(key, value string) error {
 func (m *Module) settingsDefs() []contracts.SettingDef {
 	m.cfgMu.RLock()
 	defer m.cfgMu.RUnlock()
+	registryOn := false
+	if m.policy != nil {
+		registryOn = m.policy.RegistryMatchingEnabled()
+	}
 	return []contracts.SettingDef{
 		{
 			Key:         "policy_file",
@@ -37,6 +41,14 @@ func (m *Module) settingsDefs() []contracts.SettingDef {
 			Value:       m.auditPath,
 			Description: "JSONL audit log path (PUBLISH_POLICY_AUDIT_PATH); empty disables export",
 			Group:       "Audit",
+		},
+		{
+			Key:         "registry_capability_matching",
+			Label:       "Registry Capability Matching",
+			Type:        contracts.SettingTypeBool,
+			Value:       fmt.Sprintf("%t", registryOn),
+			Description: "When enabled, modules may publish event types derived from their registered mesh capabilities (PUBLISH_POLICY_REGISTRY_MATCH)",
+			Group:       "Policy",
 		},
 	}
 }
@@ -61,6 +73,15 @@ func (m *Module) updateSetting(key, value string) error {
 		m.cfgMu.Unlock()
 		if m.policy != nil {
 			m.policy.SetAuditPath(value)
+		}
+		return nil
+	case "registry_capability_matching", "PUBLISH_POLICY_REGISTRY_MATCH":
+		on := strings.EqualFold(value, "true") || value == "1"
+		if m.policy != nil {
+			m.policy.SetRegistryMatching(on)
+		}
+		if on && m.mc == nil {
+			go m.subscribeRegistryEvents()
 		}
 		return nil
 	default:

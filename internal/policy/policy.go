@@ -30,8 +30,9 @@ type Rule struct {
 }
 
 type policyDoc struct {
-	Groups map[string][]string `yaml:"groups"`
-	Rules  []Rule              `yaml:"rules"`
+	RegistryCapabilityMatching *bool               `yaml:"registry_capability_matching"`
+	Groups                     map[string][]string `yaml:"groups"`
+	Rules                      []Rule              `yaml:"rules"`
 }
 
 // Policy holds the complete set of publish policy rules.
@@ -39,6 +40,10 @@ type Policy struct {
 	mu     sync.RWMutex
 	rules  []Rule
 	groups map[string][]string
+
+	registryMu      sync.RWMutex
+	registryEnabled bool
+	registryCaps    map[string][]string
 
 	rateMu sync.Mutex
 	rates  map[string]*rateWindow
@@ -75,6 +80,7 @@ func Parse(data []byte) (*Policy, error) {
 
 	var rules []Rule
 	var groups map[string][]string
+	var registryMatching *bool
 
 	switch node.Kind {
 	case yaml.SequenceNode, 0:
@@ -88,6 +94,7 @@ func Parse(data []byte) (*Policy, error) {
 		}
 		rules = doc.Rules
 		groups = doc.Groups
+		registryMatching = doc.RegistryCapabilityMatching
 	default:
 		rules = nil
 	}
@@ -114,12 +121,17 @@ func Parse(data []byte) (*Policy, error) {
 			return nil, fmt.Errorf("rule %d: payload_max_bytes must be >= 0", i)
 		}
 	}
-	return &Policy{
-		rules:  rules,
-		groups: groups,
-		rates:  make(map[string]*rateWindow),
-		now:    time.Now,
-	}, nil
+	p := &Policy{
+		rules:        rules,
+		groups:       groups,
+		registryCaps: make(map[string][]string),
+		rates:        make(map[string]*rateWindow),
+		now:          time.Now,
+	}
+	if registryMatching != nil {
+		p.registryEnabled = *registryMatching
+	}
+	return p, nil
 }
 
 // SetAuditPath enables JSONL audit export of allow/deny decisions.
@@ -176,6 +188,10 @@ func (p *Policy) AllowWithPayload(caller, eventType string, payload []byte) (boo
 			}
 		}
 		p.audit(caller, eventType, true, "")
+		return true, ""
+	}
+	if p.allowViaRegistry(caller, eventType, payload) {
+		p.audit(caller, eventType, true, "registry capability match")
 		return true, ""
 	}
 	reason := fmt.Sprintf("no policy rule matches caller=%q event_type=%q", caller, eventType)
@@ -238,17 +254,19 @@ func (p *Policy) audit(caller, eventType string, allowed bool, reason string) {
 	_, _ = f.Write(append(b, '\n'))
 }
 
-// ReplaceRules atomically replaces all rules with those from another Policy.
+// ReplaceRules atomically replaces static YAML rules. Registry capability state is preserved.
 func (p *Policy) ReplaceRules(src *Policy) {
 	src.mu.RLock()
 	rules := make([]Rule, len(src.rules))
 	copy(rules, src.rules)
 	groups := cloneGroups(src.groups)
+	registryEnabled := src.registryEnabled
 	src.mu.RUnlock()
 
 	p.mu.Lock()
 	p.rules = rules
 	p.groups = groups
+	p.registryEnabled = registryEnabled
 	p.mu.Unlock()
 
 	p.rateMu.Lock()
