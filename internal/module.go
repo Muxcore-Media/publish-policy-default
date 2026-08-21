@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/Muxcore-Media/core/pkg/contracts"
+	"github.com/Muxcore-Media/core/sdk/go/client"
 	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
 	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 	"github.com/Muxcore-Media/publish-policy-default/internal/server"
@@ -30,6 +31,10 @@ type Module struct {
 	auditPath string
 	id        string
 	grpcAddr  string
+	mc        *client.Client
+
+	registryMu          sync.Mutex
+	registrySyncStarted bool
 }
 
 type Config struct {
@@ -64,9 +69,9 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Publish Policy Default",
-		Version:      "0.2.2",
+		Version:      "0.3.0",
 		Roles:        []string{"security"},
-		Description:  "Event publish policy with globs, payload checks, rate limits, and audit export",
+		Description:  "Event publish policy with globs, payload checks, rate limits, registry capability matching, and audit export",
 		Author:       "MuxCore",
 		Capabilities: []string{contracts.CapabilityPublishPolicy, "settings"},
 		Contracts: []contracts.ContractDeclaration{
@@ -87,6 +92,7 @@ func (m *Module) Init(ctx context.Context) error {
 		m.policy.SetAuditPath(m.auditPath)
 		slog.Info("publish-policy audit export enabled", "path", m.auditPath)
 	}
+	m.applyRegistryMatchingDefaults()
 	m.srv = server.New(m.policy)
 	m.lis, err = net.Listen("tcp", m.grpcAddr)
 	if err != nil {
@@ -119,10 +125,16 @@ func (m *Module) Start(ctx context.Context) error {
 			}
 		}
 	}()
+
+	go m.subscribeRegistryEvents()
 	return nil
 }
 
 func (m *Module) Stop(ctx context.Context) error {
+	if m.mc != nil {
+		m.mc.Close()
+		m.mc = nil
+	}
 	if m.grpcSrv != nil {
 		m.grpcSrv.GracefulStop()
 	}

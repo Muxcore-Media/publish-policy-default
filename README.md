@@ -60,6 +60,9 @@ maintain an explicit `policies.yaml` (the repo includes a starter file).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PUBLISH_POLICY_FILE` | `policies.yaml` | Path to policy YAML file |
+| `PUBLISH_POLICY_AUDIT_PATH` | unset | JSONL audit log for allow/deny decisions |
+| `PUBLISH_POLICY_REGISTRY_MATCH` | unset | `1`/`true` enables registry capability matching (overrides YAML default) |
+| `PUBLISH_POLICY_REGISTRY_SYNC_DELAY` | `5s` | Delay before initial registry bootstrap |
 | `MUXCORE_INSECURE_DISABLE_TLS` | unset | Set to `true` for insecure mesh registration (dev) |
 
 Mesh registration also uses the module SDK (`MUXCORE_GRPC_ADDR`,
@@ -69,6 +72,8 @@ Mesh registration also uses the module SDK (`MUXCORE_GRPC_ADDR`,
 ### Advanced rules (v0.2+)
 
 ```yaml
+registry_capability_matching: true   # auto-allow event types from mesh module capabilities
+
 groups:
   downloaders:
     - downloader-qbittorrent
@@ -80,6 +85,8 @@ rules:
     payload_require_keys: ["id"]
     required_capability: "download"   # event type capability.download* or payload.capability
 ```
+
+When `registry_capability_matching` is enabled (or `PUBLISH_POLICY_REGISTRY_MATCH=1`), static YAML rules are evaluated first. If none match, the module allows publishes when the caller's registered capabilities imply the event type (for example capability `media.movies` → `media.*`, `settings` → `module.*`).
 
 Set `PUBLISH_POLICY_AUDIT_PATH` to append JSONL allow/deny records.
 

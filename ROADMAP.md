@@ -5,7 +5,7 @@
 - [x] Health endpoint (gRPC health check)
 
 ### Advanced
-- [ ] Dynamic capability-based matching (auto-detect event types from registry)
-- [ ] Payload-level checks (ResourcePublishPolicyProvider)
-- [ ] Event rate limiting per caller
-- [ ] Policy audit log export
+- [x] Dynamic capability-based matching — `registry_capability_matching` + mesh `ListAll` bootstrap and `module.registered` / `module.unregistered` sync
+- [x] Payload-level checks — YAML `payload_max_bytes` / `payload_require_keys`; core forwards payload via `ResourcePublishPolicyProvider` (`SidecarPublishPolicy.CanPublishEvent`)
+- [x] Event rate limiting per caller — `rate_limit_per_min` in policy rules
+- [x] Policy audit log export — JSONL via `PUBLISH_POLICY_AUDIT_PATH`

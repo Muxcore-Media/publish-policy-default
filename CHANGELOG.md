@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0] — 2026-08-20
+
+### Added
+
+- Registry capability matching: auto-allow event types derived from registered module capabilities (`registry_capability_matching`, `PUBLISH_POLICY_REGISTRY_MATCH`)
+- Mesh bootstrap via Discovery `ListAll` plus live sync on `module.registered` / `module.unregistered`
+- Admin setting `registry_capability_matching`
+
 ## [0.2.2] — 2026-08-10
 
 ### Added
