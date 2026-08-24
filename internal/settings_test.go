@@ -22,7 +22,7 @@ func TestSettingsPolicyAndAudit(t *testing.T) {
 	if err := m.Init(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	defer m.Stop(t.Context())
+	defer func() { _ = m.Stop(t.Context()) }()
 
 	if err := m.UpdateSetting("policy_file", p2); err != nil {
 		t.Fatal(err)
