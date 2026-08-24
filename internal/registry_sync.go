@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Muxcore-Media/core/pkg/contracts"
 	discoveryv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/discovery/v1"
 	eventsv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/events/v1"
-	"github.com/Muxcore-Media/core/pkg/contracts"
 	"github.com/Muxcore-Media/core/sdk/go/client"
 )
 

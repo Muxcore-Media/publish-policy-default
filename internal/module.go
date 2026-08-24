@@ -132,7 +132,7 @@ func (m *Module) Start(ctx context.Context) error {
 
 func (m *Module) Stop(ctx context.Context) error {
 	if m.mc != nil {
-		m.mc.Close()
+		_ = m.mc.Close()
 		m.mc = nil
 	}
 	if m.grpcSrv != nil {
