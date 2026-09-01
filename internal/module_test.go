@@ -35,14 +35,26 @@ func TestModuleInfo(t *testing.T) {
 func TestModuleLifecycle(t *testing.T) {
 	m := NewModule(Config{FilePath: testPolicyFile(t), GRPCAddr: "127.0.0.1:0"})
 	ctx := context.Background()
+	if err := m.Health(ctx); err == nil {
+		t.Fatal("Health should fail before Start")
+	}
 	if err := m.Init(ctx); err != nil {
 		t.Fatalf("Init: %v", err)
+	}
+	if err := m.Health(ctx); err == nil {
+		t.Fatal("Health should fail before Start")
 	}
 	if err := m.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+	if err := m.Health(ctx); err != nil {
+		t.Fatalf("Health after Start: %v", err)
+	}
 	if err := m.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
+	}
+	if err := m.Health(ctx); err == nil {
+		t.Fatal("Health should fail after Stop")
 	}
 }
 

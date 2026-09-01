@@ -7,6 +7,8 @@ Wants=network-online.target
 Type=simple
 User=muxcore
 Group=muxcore
+WorkingDirectory=/var/lib/publish-policy-default
+Environment=PUBLISH_POLICY_FILE=/var/lib/publish-policy-default/policies.yaml
 ExecStart=/usr/local/bin/publish-policy-default \
   --muxcore-mesh-addr localhost:9090 \
   --muxcore-module-id publish-policy-default

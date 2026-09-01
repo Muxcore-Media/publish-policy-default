@@ -45,11 +45,8 @@ func eventPatternsForRegistryCapability(cap string) []string {
 	return out
 }
 
-func registryAllowsCapabilities(caps []string, eventType string, payload []byte) bool {
+func registryAllowsCapabilities(caps []string, eventType string) bool {
 	for _, cap := range caps {
-		if capabilityMatches(cap, eventType, payload) {
-			return true
-		}
 		for _, pattern := range eventPatternsForRegistryCapability(cap) {
 			if matchEventType(pattern, eventType) {
 				return true
@@ -120,5 +117,5 @@ func (p *Policy) allowViaRegistry(caller, eventType string, payload []byte) bool
 	if len(caps) == 0 {
 		return false
 	}
-	return registryAllowsCapabilities(caps, eventType, payload)
+	return registryAllowsCapabilities(caps, eventType)
 }

@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -52,18 +53,20 @@ func (m *Module) dialCoreForRegistry() {
 		slog.Warn("publish-policy: dial core for registry sync", "error", err)
 		return
 	}
+	if m.mc != nil {
+		_ = m.mc.Close()
+	}
 	m.mc = c
 	slog.Info("publish-policy: connected to core for registry capability sync", "addr", addr)
 }
 
-func (m *Module) syncRegistryFromDiscovery(ctx context.Context) {
+func (m *Module) syncRegistryFromDiscovery(ctx context.Context) error {
 	if m.mc == nil || m.policy == nil || !m.policy.RegistryMatchingEnabled() {
-		return
+		return nil
 	}
 	resp, err := m.mc.Discovery.Raw().ListAll(ctx, &discoveryv1.ListAllRequest{})
 	if err != nil {
-		slog.Debug("publish-policy: ListAll failed", "error", err)
-		return
+		return fmt.Errorf("ListAll: %w", err)
 	}
 	count := 0
 	for _, entry := range resp.GetEntries() {
@@ -77,70 +80,159 @@ func (m *Module) syncRegistryFromDiscovery(ctx context.Context) {
 	if count > 0 {
 		slog.Info("publish-policy: registry capability map bootstrapped", "modules", count)
 	}
+	return nil
 }
 
-func (m *Module) subscribeRegistryEvents() {
-	if m.policy == nil || !m.policy.RegistryMatchingEnabled() {
-		slog.Info("publish-policy: registry capability matching disabled")
-		return
-	}
-
-	m.registryMu.Lock()
-	alreadyStarted := m.registrySyncStarted
-	if !alreadyStarted {
-		m.registrySyncStarted = true
-	}
-	m.registryMu.Unlock()
-
-	if alreadyStarted {
-		if m.mc == nil {
-			m.dialCoreForRegistry()
-		}
-		if m.mc != nil {
-			m.syncRegistryFromDiscovery(context.Background())
-		}
-		return
-	}
-
+func registrySyncDelay() time.Duration {
 	delay := 5 * time.Second
 	if v := os.Getenv("PUBLISH_POLICY_REGISTRY_SYNC_DELAY"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			delay = d
 		}
 	}
-	if delay > 0 {
-		time.Sleep(delay)
+	return delay
+}
+
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
 	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+func (m *Module) subscribeRegistryEvents() {
+	if m.policy == nil {
+		return
+	}
+
+	m.registryMu.Lock()
+	if m.registrySyncStarted {
+		m.registryMu.Unlock()
+		if m.policy.RegistryMatchingEnabled() {
+			if m.mc == nil {
+				m.dialCoreForRegistry()
+			}
+			if m.mc != nil {
+				_ = m.syncRegistryFromDiscovery(context.Background())
+			}
+		}
+		return
+	}
+	m.registrySyncStarted = true
+	ctx, cancel := context.WithCancel(context.Background())
+	m.registryCancel = cancel
+	done := make(chan struct{})
+	m.registryDone = done
+	m.registryMu.Unlock()
+
+	go m.runRegistrySyncLoop(ctx, done)
+}
+
+func (m *Module) runRegistrySyncLoop(ctx context.Context, done chan struct{}) {
+	defer close(done)
+
+	if !m.policy.RegistryMatchingEnabled() {
+		slog.Info("publish-policy: registry capability matching disabled")
+	}
+
+	retryDelay := registrySyncDelay()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if m.policy == nil || !m.policy.RegistryMatchingEnabled() {
+			if err := sleepContext(ctx, time.Second); err != nil {
+				return
+			}
+			continue
+		}
+
+		if err := sleepContext(ctx, retryDelay); err != nil {
+			return
+		}
+		if err := m.registrySyncSession(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Warn("publish-policy: registry sync failed, retrying", "error", err)
+			if err := sleepContext(ctx, 5*time.Second); err != nil {
+				return
+			}
+			continue
+		}
+		retryDelay = registrySyncDelay()
+	}
+}
+
+func (m *Module) registrySyncSession(ctx context.Context) error {
 	if m.mc == nil {
 		m.dialCoreForRegistry()
 	}
 	if m.mc == nil {
-		slog.Warn("publish-policy: no mesh client; registry capability sync disabled")
-		return
+		return fmt.Errorf("no mesh client")
+	}
+	if err := m.syncRegistryFromDiscovery(ctx); err != nil {
+		return err
 	}
 
-	ctx := context.Background()
-	m.syncRegistryFromDiscovery(ctx)
+	type stream struct {
+		eventType string
+		ch        <-chan *eventsv1.Event
+		cancel    context.CancelFunc
+	}
+	var streams []stream
+	defer func() {
+		for _, s := range streams {
+			s.cancel()
+		}
+	}()
 
 	for _, et := range []string{contracts.EventModuleRegistered, contracts.EventModuleUnregistered} {
 		ch, cancel, err := m.mc.Events.Subscribe(ctx, et)
 		if err != nil {
-			slog.Warn("publish-policy: registry subscribe failed", "type", et, "error", err)
-			continue
+			return fmt.Errorf("subscribe %s: %w", et, err)
 		}
-		go m.handleRegistryEventStream(et, ch, cancel)
+		streams = append(streams, stream{eventType: et, ch: ch, cancel: cancel})
 		slog.Info("publish-policy: subscribed for registry capability sync", "type", et)
+	}
+
+	errCh := make(chan error, len(streams))
+	for _, s := range streams {
+		go func(st stream) {
+			errCh <- m.handleRegistryEventStream(ctx, st.eventType, st.ch)
+		}(s)
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errCh:
+		return err
 	}
 }
 
-func (m *Module) handleRegistryEventStream(eventType string, ch <-chan *eventsv1.Event, cancel context.CancelFunc) {
-	defer cancel()
-	for evt := range ch {
-		switch eventType {
-		case contracts.EventModuleRegistered:
-			m.applyModuleRegistered(evt)
-		case contracts.EventModuleUnregistered:
-			m.applyModuleUnregistered(evt)
+func (m *Module) handleRegistryEventStream(ctx context.Context, eventType string, ch <-chan *eventsv1.Event) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case evt, ok := <-ch:
+			if !ok {
+				return fmt.Errorf("registry event stream closed: %s", eventType)
+			}
+			switch eventType {
+			case contracts.EventModuleRegistered:
+				m.applyModuleRegistered(evt)
+			case contracts.EventModuleUnregistered:
+				m.applyModuleUnregistered(evt)
+			}
 		}
 	}
 }

@@ -3,6 +3,7 @@ package policy
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -248,10 +249,13 @@ func (p *Policy) audit(caller, eventType string, allowed bool, reason string) {
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
+		slog.Warn("publish-policy audit write failed", "path", path, "error", err)
 		return
 	}
 	defer func() { _ = f.Close() }()
-	_, _ = f.Write(append(b, '\n'))
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		slog.Warn("publish-policy audit write failed", "path", path, "error", err)
+	}
 }
 
 // ReplaceRules atomically replaces static YAML rules. Registry capability state is preserved.

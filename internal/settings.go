@@ -21,8 +21,13 @@ func (m *Module) settingsDefs() []contracts.SettingDef {
 	m.cfgMu.RLock()
 	defer m.cfgMu.RUnlock()
 	registryOn := false
+	var allowed, denied int64
 	if m.policy != nil {
 		registryOn = m.policy.RegistryMatchingEnabled()
+	}
+	if m.srv != nil {
+		allowed = m.srv.AllowedTotal()
+		denied = m.srv.DeniedTotal()
 	}
 	return []contracts.SettingDef{
 		{
@@ -32,6 +37,14 @@ func (m *Module) settingsDefs() []contracts.SettingDef {
 			Value:       m.filePath,
 			Default:     "policies.yaml",
 			Description: "Path to YAML publish policy (PUBLISH_POLICY_FILE); updates reload immediately",
+			Group:       "Policy",
+		},
+		{
+			Key:         "reload_policy",
+			Label:       "Reload Policy",
+			Type:        contracts.SettingTypeString,
+			Value:       "",
+			Description: "Set to reload (any non-empty value) to re-read the current policy_file without changing its path",
 			Group:       "Policy",
 		},
 		{
@@ -50,6 +63,22 @@ func (m *Module) settingsDefs() []contracts.SettingDef {
 			Description: "When enabled, modules may publish event types derived from their registered mesh capabilities (PUBLISH_POLICY_REGISTRY_MATCH)",
 			Group:       "Policy",
 		},
+		{
+			Key:         "allowed_total",
+			Label:       "Allowed Publish Total",
+			Type:        contracts.SettingTypeInt,
+			Value:       fmt.Sprintf("%d", allowed),
+			Description: "Read-only counter of event publishes allowed by policy (publish_policy_allowed_total)",
+			Group:       "Metrics",
+		},
+		{
+			Key:         "denied_total",
+			Label:       "Denied Publish Total",
+			Type:        contracts.SettingTypeInt,
+			Value:       fmt.Sprintf("%d", denied),
+			Description: "Read-only counter of event publishes denied by policy (publish_policy_denied_total)",
+			Group:       "Metrics",
+		},
 	}
 }
 
@@ -67,6 +96,14 @@ func (m *Module) updateSetting(key, value string) error {
 			return nil
 		}
 		return m.ReloadPolicy()
+	case "reload_policy":
+		if value == "" {
+			return fmt.Errorf("reload_policy requires a non-empty trigger value")
+		}
+		if m.policy == nil {
+			return fmt.Errorf("policy not loaded")
+		}
+		return m.ReloadPolicy()
 	case "audit_path", "PUBLISH_POLICY_AUDIT_PATH":
 		m.cfgMu.Lock()
 		m.auditPath = value
@@ -80,10 +117,12 @@ func (m *Module) updateSetting(key, value string) error {
 		if m.policy != nil {
 			m.policy.SetRegistryMatching(on)
 		}
-		if on && m.mc == nil {
+		if on {
 			go m.subscribeRegistryEvents()
 		}
 		return nil
+	case "allowed_total", "denied_total":
+		return fmt.Errorf("setting %q is read-only", key)
 	default:
 		return fmt.Errorf("unknown setting %q", key)
 	}

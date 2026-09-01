@@ -33,6 +33,16 @@ func (s *PolicyServer) RegisterWithGRPC(srv *grpc.Server) {
 	policyv1.RegisterPolicyServiceServer(srv, s)
 }
 
+// AllowedTotal returns the number of publishes allowed since start.
+func (s *PolicyServer) AllowedTotal() int64 {
+	return s.allowed.Load()
+}
+
+// DeniedTotal returns the number of publishes denied since start.
+func (s *PolicyServer) DeniedTotal() int64 {
+	return s.denied.Load()
+}
+
 // Metrics returns Prometheus-format metrics text.
 func (s *PolicyServer) Metrics() string {
 	var b strings.Builder

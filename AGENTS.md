@@ -7,8 +7,8 @@ MuxCore sidecar module (`publish-policy-default`). Workspace deploy and SSH: [`.
 | Field | Value |
 |-------|-------|
 | Directory | `publish-policy-default` |
-| Capabilities | see muxcore.json |
-| Contracts | none declared |
+| Capabilities | `publish.policy`, `settings` |
+| Contracts | `PublishPolicyProvider` v0.4.0 (`core/pkg/contracts`) |
 
 ## Agent rules
 

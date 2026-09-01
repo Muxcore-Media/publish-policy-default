@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -35,6 +36,12 @@ type Module struct {
 
 	registryMu          sync.Mutex
 	registrySyncStarted bool
+	registryCancel      context.CancelFunc
+	registryDone        chan struct{}
+
+	sighupCh   chan os.Signal
+	sighupStop chan struct{}
+	sighupDone chan struct{}
 }
 
 type Config struct {
@@ -105,7 +112,7 @@ func (m *Module) Init(ctx context.Context) error {
 func (m *Module) Start(ctx context.Context) error {
 	m.grpcSrv = grpc.NewServer()
 	m.srv.RegisterWithGRPC(m.grpcSrv)
-	grpc_health_v1.RegisterHealthServer(m.grpcSrv, &healthServer{})
+	grpc_health_v1.RegisterHealthServer(m.grpcSrv, &healthServer{module: m})
 	modulesdk.RegisterSettings(m.grpcSrv, m.id, m)
 
 	go func() {
@@ -116,12 +123,23 @@ func (m *Module) Start(ctx context.Context) error {
 	}()
 
 	sighupCh := make(chan os.Signal, 1)
+	sighupStop := make(chan struct{})
+	sighupDone := make(chan struct{})
+	m.sighupCh = sighupCh
+	m.sighupStop = sighupStop
+	m.sighupDone = sighupDone
 	signal.Notify(sighupCh, syscall.SIGHUP)
 	go func() {
-		for range sighupCh {
-			slog.Info("SIGHUP: reloading policy")
-			if err := m.ReloadPolicy(); err != nil {
-				slog.Error("policy reload failed", "error", err)
+		defer close(sighupDone)
+		for {
+			select {
+			case <-sighupCh:
+				slog.Info("SIGHUP: reloading policy")
+				if err := m.ReloadPolicy(); err != nil {
+					slog.Error("policy reload failed", "error", err)
+				}
+			case <-sighupStop:
+				return
 			}
 		}
 	}()
@@ -131,29 +149,73 @@ func (m *Module) Start(ctx context.Context) error {
 }
 
 func (m *Module) Stop(ctx context.Context) error {
+	m.registryMu.Lock()
+	cancel := m.registryCancel
+	done := m.registryDone
+	m.registryMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+	if m.sighupStop != nil {
+		select {
+		case <-m.sighupStop:
+		default:
+			close(m.sighupStop)
+		}
+		if m.sighupDone != nil {
+			<-m.sighupDone
+		}
+	}
+	if m.sighupCh != nil {
+		signal.Stop(m.sighupCh)
+	}
 	if m.mc != nil {
 		_ = m.mc.Close()
 		m.mc = nil
 	}
 	if m.grpcSrv != nil {
 		m.grpcSrv.GracefulStop()
+		m.grpcSrv = nil
 	}
 	slog.Info("publish-policy stopped")
 	return nil
 }
 
 func (m *Module) Health(ctx context.Context) error {
+	if m.grpcSrv == nil {
+		return fmt.Errorf("gRPC server not started")
+	}
 	return nil
 }
 
 type healthServer struct {
 	grpc_health_v1.UnimplementedHealthServer
+	module *Module
 }
 
-func (s *healthServer) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+func (s *healthServer) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	if err := s.module.Health(ctx); err != nil {
+		return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_NOT_SERVING}, nil
+	}
 	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
 }
 
 func (s *healthServer) Watch(_ *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
-	return stream.Send(&grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING})
+	for {
+		status := grpc_health_v1.HealthCheckResponse_SERVING
+		if err := s.module.Health(stream.Context()); err != nil {
+			status = grpc_health_v1.HealthCheckResponse_NOT_SERVING
+		}
+		if err := stream.Send(&grpc_health_v1.HealthCheckResponse{Status: status}); err != nil {
+			return err
+		}
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-time.After(time.Second):
+		}
+	}
 }

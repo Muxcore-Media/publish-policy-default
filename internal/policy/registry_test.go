@@ -28,14 +28,35 @@ rules:
 	}
 }
 
-func TestRegistryCapabilityPayloadMatch(t *testing.T) {
+func TestRegistryCapabilityPayloadMatchDenied(t *testing.T) {
 	p, err := Parse([]byte(`registry_capability_matching: true`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	p.UpsertRegistryModule("dl", []string{"download"})
+	if ok, _ := p.AllowWithPayload("dl", "job.done", []byte(`{"capability":"download"}`)); ok {
+		t.Fatal("registry matching must not grant arbitrary events via payload capability field")
+	}
+	if ok, _ := p.AllowWithPayload("dl", "media.imported", []byte(`{"capability":"download"}`)); ok {
+		t.Fatal("registry matching must not grant media events via payload capability field")
+	}
+	if ok, _ := p.Allow("dl", "download.completed"); !ok {
+		t.Fatal("expected download.* from download capability")
+	}
+}
+
+func TestRegistryCapabilityPayloadMatchYAMLRule(t *testing.T) {
+	p, err := Parse([]byte(`
+rules:
+  - caller: "dl"
+    event_types: ["*"]
+    required_capability: "download"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ok, _ := p.AllowWithPayload("dl", "job.done", []byte(`{"capability":"download"}`)); !ok {
-		t.Fatal("payload capability field should match")
+		t.Fatal("YAML required_capability should still match payload capability after caller+event_type matched")
 	}
 }
 
