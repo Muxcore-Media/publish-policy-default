@@ -12,11 +12,13 @@ import (
 	"syscall"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/Muxcore-Media/core/pkg/contracts"
 	"github.com/Muxcore-Media/core/sdk/go/client"
 	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
+	"github.com/Muxcore-Media/publish-policy-default/internal/grpctls"
 	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 	"github.com/Muxcore-Media/publish-policy-default/internal/server"
 )
@@ -48,11 +50,15 @@ func NewModule(cfg Config) *Module {
 		cfg.ID = "publish-policy-default"
 	}
 	if cfg.GRPCAddr == "" {
-		cfg.GRPCAddr = ":9102"
+		cfg.GRPCAddr = "127.0.0.1:9102"
 	}
 	if cfg.FilePath == "" {
 		cfg.FilePath = "policies.yaml"
 	}
+	if v := os.Getenv("PUBLISH_POLICY_GRPC_ADDR"); v != "" {
+		cfg.GRPCAddr = v
+	}
+	cfg.GRPCAddr = resolveGRPCAddr(cfg.GRPCAddr)
 	if v := os.Getenv("PUBLISH_POLICY_FILE"); v != "" {
 		cfg.FilePath = v
 	}
@@ -103,7 +109,21 @@ func (m *Module) Init(ctx context.Context) error {
 }
 
 func (m *Module) Start(ctx context.Context) error {
-	m.grpcSrv = grpc.NewServer()
+	var grpcOpts []grpc.ServerOption
+	tlsCfg, err := grpctls.ServerConfig()
+	if err != nil {
+		return fmt.Errorf("gRPC TLS: %w", err)
+	}
+	if tlsCfg != nil {
+		grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(tlsCfg)))
+		slog.Info("publish-policy gRPC TLS enabled", "addr", m.grpcAddr)
+	} else {
+		slog.Warn("publish-policy gRPC listening without TLS (dev only)",
+			"addr", m.grpcAddr,
+			"hint", "unset MUXCORE_INSECURE_DISABLE_TLS for production",
+		)
+	}
+	m.grpcSrv = grpc.NewServer(grpcOpts...)
 	m.srv.RegisterWithGRPC(m.grpcSrv)
 	grpc_health_v1.RegisterHealthServer(m.grpcSrv, &healthServer{})
 	modulesdk.RegisterSettings(m.grpcSrv, m.id, m)
@@ -156,4 +176,23 @@ func (s *healthServer) Check(_ context.Context, _ *grpc_health_v1.HealthCheckReq
 
 func (s *healthServer) Watch(_ *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
 	return stream.Send(&grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING})
+}
+
+// resolveGRPCAddr prefers loopback when plaintext is explicitly enabled and the
+// bind address would otherwise listen on all interfaces.
+func resolveGRPCAddr(addr string) string {
+	if !grpctls.InsecureAllowed() {
+		return addr
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		if strings.HasPrefix(addr, ":") {
+			return "127.0.0.1" + addr
+		}
+		return addr
+	}
+	if host == "" || host == "0.0.0.0" {
+		return "127.0.0.1:" + port
+	}
+	return addr
 }
