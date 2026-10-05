@@ -18,6 +18,7 @@ import (
 	"github.com/Muxcore-Media/core/pkg/contracts"
 	"github.com/Muxcore-Media/core/sdk/go/client"
 	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
+	manifest "github.com/Muxcore-Media/publish-policy-default"
 	"github.com/Muxcore-Media/publish-policy-default/internal/grpctls"
 	"github.com/Muxcore-Media/publish-policy-default/internal/policy"
 	"github.com/Muxcore-Media/publish-policy-default/internal/server"
@@ -75,7 +76,7 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Publish Policy Default",
-		Version:      "0.3.0",
+		Version:      modulesdk.ManifestVersion(manifest.ManifestJSON),
 		Roles:        []string{"security"},
 		Description:  "Event publish policy with globs, payload checks, rate limits, registry capability matching, and audit export",
 		Author:       "MuxCore",
